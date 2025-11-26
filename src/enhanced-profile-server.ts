@@ -39,13 +39,15 @@ interface ProfileData {
   }>;
 }
 
-// Only declare the environment variables we actually use
+// Environment variables: Required for OAuth, optional for others with defaults
 declare global {
   namespace NodeJS {
     interface ProcessEnv {
-      PORT?: string;
-      NODE_ENV?: string;
-      DEFAULT_PROFILE_ID?: string;
+      PORT?: string; // Optional: defaults to 3000
+      NODE_ENV?: string; // Optional: defaults to 'development'  
+      DEFAULT_PROFILE_ID?: string; // Optional: defaults to 'default'
+      AUTH0_ISSUER_BASE_URL: string; // Required for OAuth functionality
+      AUTH0_AUDIENCE: string; // Required for OAuth functionality
     }
   }
 }
@@ -644,6 +646,29 @@ app.get('/health', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     profiles: Object.keys(PROFILE_DATABASE).length,
     environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+/**
+ * OAuth Protected Resource Metadata Endpoint
+ * Required by ChatGPT Apps SDK for OAuth discovery.
+ * Advertises this server's resource URL and supported authorization servers.
+ * Must match Auth0 API Identifier exactly.
+ */
+app.get('/.well-known/oauth-protected-resource', (_req: Request, res: Response) => {
+  const issuerURL = process.env.AUTH0_ISSUER_BASE_URL;
+  const audience = process.env.AUTH0_AUDIENCE; // Use audience as resource URL
+  
+  if (!issuerURL || !audience) {
+    return res.status(503).json({
+      error: 'server_misconfig',
+      message: 'Set AUTH0_ISSUER_BASE_URL and AUTH0_AUDIENCE env vars'
+    });
+  }
+
+  return res.json({
+    resource: audience,
+    authorization_servers: [issuerURL]
   });
 });
 

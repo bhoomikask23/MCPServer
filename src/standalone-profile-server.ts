@@ -8,6 +8,8 @@
 
 // Load environment variables (ES module compatible)
 import dotenv from 'dotenv';
+import express from 'express';
+import cors from 'cors';
 dotenv.config();
 
 // Type assertion for process.env
@@ -779,6 +781,92 @@ class StandaloneProfileServer {
     }
   }
 
+  startHttpServer() {
+    const app = express();
+    const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+    // Middleware
+    app.use(cors());
+    app.use(express.json());
+
+    // Health check endpoint for Render
+    app.get('/health', (_req, res) => {
+      res.status(200).json({
+        status: 'healthy',
+        server: this.serverName,
+        version: this.serverVersion,
+        environment: this.isProduction ? 'production' : 'development',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+      });
+    });
+
+    // MCP over HTTP endpoint
+    app.post('/mcp', (req, res) => {
+      try {
+        const request = req.body as MCPRequest;
+        const response = this.handleRequest(request);
+        res.json(response);
+      } catch (error) {
+        const errorResponse: MCPResponse = {
+          jsonrpc: "2.0",
+          error: {
+            code: -32700,
+            message: "Parse error",
+            data: error instanceof Error ? error.message : String(error),
+          },
+        };
+        res.status(400).json(errorResponse);
+      }
+    });
+
+    // Profile demo endpoint
+    app.get('/profile/:id?', (req, res) => {
+      try {
+        const profileId = req.params.id || this.defaultProfileId;
+        const profile = this.getProfileSync(profileId);
+        const htmlContent = this.generateProfileHTML(profile);
+        res.setHeader('Content-Type', 'text/html');
+        res.send(htmlContent);
+      } catch (error) {
+        res.status(500).json({
+          error: 'Failed to generate profile',
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    });
+
+    // Root endpoint
+    app.get('/', (_req, res) => {
+      res.json({
+        name: this.serverName,
+        version: this.serverVersion,
+        description: 'MCP Profile Server - A Model Context Protocol implementation for profile management',
+        endpoints: {
+          health: '/health',
+          mcp: '/mcp (POST)',
+          profile: '/profile/:id (GET)'
+        },
+        environment: this.isProduction ? 'production' : 'development',
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`🚀 ${this.serverName} v${this.serverVersion} HTTP server started!`);
+      console.log(`🌐 Server running on port ${port}`);
+      console.log(`🌍 Environment: ${this.isProduction ? 'Production' : 'Development'}`);
+      console.log(`📋 Available endpoints:`);
+      console.log(`   GET  /health - Health check`);
+      console.log(`   GET  / - Server info`);
+      console.log(`   POST /mcp - MCP protocol endpoint`);
+      console.log(`   GET  /profile/:id - Profile HTML viewer`);
+      if (process.env.RENDER) {
+        console.log(`🚀 Running on Render: ${process.env.RENDER_EXTERNAL_URL || 'Unknown URL'}`);
+      }
+    });
+  }
+
   startStdioServer() {
     process.stdin.setEncoding('utf8');
     
@@ -833,4 +921,10 @@ class StandaloneProfileServer {
 
 // Start the server
 const profileServer = new StandaloneProfileServer();
-profileServer.startStdioServer();
+
+// Use HTTP server mode when running on Render, STDIO mode otherwise
+if (process.env.RENDER || process.env.PORT) {
+  profileServer.startHttpServer();
+} else {
+  profileServer.startStdioServer();
+}
