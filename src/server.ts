@@ -351,16 +351,16 @@ server.registerResource(
   <style>
     body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;padding:20px}
     .card{background:#fff;padding:28px;border-radius:12px;max-width:420px;margin:0 auto;text-align:center;box-shadow:0 6px 24px rgba(2,6,23,0.08)}
-    .avatar{width:72px;height:72px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;font-size:28px;margin-bottom:16px}
-    .name{font-size:22px;font-weight:600;margin-bottom:6px}
-    .org{color:#718096;margin-bottom:12px}
+    .icon{width:72px;height:72px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;font-size:28px;margin-bottom:16px}
+    .message{font-size:22px;font-weight:600;margin-bottom:6px}
+    .timestamp{color:#718096;margin-bottom:12px;font-family:monospace}
     .badge{display:inline-flex;padding:6px 12px;border-radius:16px;background:#e6f7ff;color:#0066cc;font-weight:600}
   </style>
 </head>
 <body>
   <!-- optional skeleton; keep dimensions stable -->
   <div id="skeleton" aria-busy="true" style="max-width:420px;margin:0 auto">
-    <div class="card">Loading user profile…</div>
+    <div class="card">Loading static data…</div>
   </div>
 
   <!-- real UI stays hidden until data is ready -->
@@ -372,20 +372,20 @@ server.registerResource(
 
     function renderIfReady() {
       const out = window.openai?.toolOutput || {};
-      const user = out.userData || null;      // <-- your tool shape
+      const data = out.userData || null;      // <-- your tool shape
 
-      if (!user) return; // not ready yet; keep skeleton
+      if (!data) return; // not ready yet; keep skeleton
 
-      const name = user.name ?? '';
-      const org  = user.organisation ?? user.organization ?? ''; // handle both spellings
-      const initial = (name || 'U').charAt(0);
+      const message = data.message ?? 'No message';
+      const timestamp = data.timestamp ?? '';
+      const formattedTime = timestamp ? new Date(timestamp).toLocaleString() : '';
 
       root.innerHTML = \`
         <div class="card">
-          <div class="avatar">\${initial}</div>
-          <div class="name">\${name}</div>
-          <div class="org">\${org}</div>
-          <div class="badge">✓ Verified User</div>
+          <div class="icon">📡</div>
+          <div class="message">\${message}</div>
+          <div class="timestamp">\${formattedTime}</div>
+          <div class="badge">✓ Static Data</div>
         </div>\`;
 
       // swap skeleton -> real content with no flicker
@@ -475,7 +475,7 @@ server.registerTool(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
       
-      const response = await fetch('https://ig2br6d6hb.execute-api.ap-southeast-2.amazonaws.com/static', {
+      const response = await fetch('https://f7bm2iixd1.execute-api.ap-southeast-2.amazonaws.com/prod/static', {
         method: 'GET',
         headers: { 
           Authorization: `Bearer ${userToken}`,
@@ -495,7 +495,7 @@ server.registerTool(
       const data = await response.json();
       
       return {
-        content: [{ type: 'text', text: `Profile loaded for ${data.name} from ${data.organisation}` }],
+        content: [{ type: 'text', text: `Static data received: ${data.message} at ${data.timestamp}` }],
         structuredContent: { userData: data }
       };
     } catch (error: any) {
