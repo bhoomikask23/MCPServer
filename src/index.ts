@@ -134,13 +134,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         }
 
         try {
-          // Simple evaluation for basic arithmetic (be careful with eval in production!)
+          // Safe math evaluation using Function constructor (safer than eval)
           const sanitizedExpression = expression.replace(/[^0-9+\-*/().\s]/g, '');
           if (sanitizedExpression !== expression) {
-            throw new Error("Invalid characters in expression");
+            throw new Error("Invalid characters in expression. Only numbers, +, -, *, /, (, ), and spaces allowed.");
           }
           
-          const result = eval(sanitizedExpression);
+          // Additional safety check
+          if (sanitizedExpression.includes('__') || sanitizedExpression.includes('constructor')) {
+            throw new Error("Invalid expression");
+          }
+          
+          const result = Function(`"use strict"; return (${sanitizedExpression})`)();
+          
+          if (!Number.isFinite(result)) {
+            throw new Error("Result is not a finite number");
+          }
+          
           return {
             content: [
               {
