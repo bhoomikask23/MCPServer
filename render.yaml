@@ -1,49 +1,15 @@
-# Render Deployment Configuration
-# This file tells Render how to build and deploy your MCP server
-
-# Build Command
-# npm run render-build
-
-# Start Command
-# npm run render-start
-
-# Environment Variables to set in Render Dashboard:
-# NODE_ENV=production
-# AWS_REGION=us-east-1
-# AWS_ACCESS_KEY_ID=<your-aws-key>
-# AWS_SECRET_ACCESS_KEY=<your-aws-secret>
-# DYNAMODB_TABLE_NAME=user_profiles
-
-# Render automatically sets:
-# PORT (usually 10000)
-# RENDER=true
-# RENDER_EXTERNAL_URL
-# RENDER_INSTANCE_ID
-
-version: 1
-
 services:
   - type: web
-    name: mcp-server
+    name: gallery-ts-mcp
     env: node
     plan: free
-    buildCommand: npm run render-build
-    startCommand: npm run render-start
-    healthCheckPath: /health
-    autoDeploy: true
+    buildCommand: npm install && npm run build
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: LOG_LEVEL
-        value: info
-      - key: DEFAULT_PROFILE_ID
-        value: default
-      - key: MCP_SERVER_NAME
-        value: profile-mcp-server
-      - key: MCP_SERVER_VERSION
-        value: "1.0.0"
-      # Required for OAuth functionality - set these in Render Dashboard
-      - key: AUTH0_ISSUER_BASE_URL
-        sync: false # Must be set manually in Render Dashboard
-      - key: AUTH0_AUDIENCE
-        sync: false # Must be set manually in Render Dashboard
+      - key: PORT
+        fromService:
+          type: web
+          name: gallery-ts-mcp
+          property: port
