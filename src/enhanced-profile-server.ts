@@ -5,10 +5,16 @@
  * Based on medicine carousel server architecture
  * Supports ChatGPT Apps integration with beautiful HTML widgets
  */
-
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { z } from 'zod';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  McpError,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
@@ -27,14 +33,21 @@ interface ProfileData {
   avatar: string;
   skills: string[];
   projects: Array<{
-    name: string;
+    name: string
     status: string;
     completion: number;
   }>;
 }
 
-interface ProfileAPIResponse {
-  userData: ProfileData;
+// Only declare the environment variables we actually use
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      PORT?: string;
+      NODE_ENV?: string;
+      DEFAULT_PROFILE_ID?: string;
+    }
+  }
 }
 
 // ==================== MOCK DATA ====================
@@ -88,17 +101,18 @@ app.use(cors({
 
 // ==================== MCP SERVER SETUP ====================
 
-const server = new McpServer({
-  name: 'profile-mcp-server-enhanced',
-  version: '1.0.0'
-});
-
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: undefined,
-});
-
-// Global token storage for OAuth
-let currentAccessToken: string | null = null;
+const server = new Server(
+  {
+    name: 'profile-mcp-server-enhanced',
+    version: '1.0.0',
+  },
+  {
+    capabilities: {
+      resources: {},
+      tools: {},
+    },
+  }
+);
 
 // ==================== HTML GENERATION ====================
 
@@ -465,132 +479,166 @@ function createProfileHTML(profile: ProfileData): string {
 
 // ==================== UI RESOURCES ====================
 
-// Profile Widget Resource
-server.registerResource(
-  'profile-widget',
-  'ui://widget/profile.html',
-  {},
-  async () => ({
-    contents: [
+// List available resources
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  return {
+    resources: [
       {
-        uri: 'ui://widget/profile.html',
-        mimeType: 'text/html+skybridge',
-        text: createProfileHTML(PROFILE_DATABASE.default)
+        uri: 'profile://widget',
+        mimeType: 'text/html',
+        name: 'Profile Widget',
+        description: 'Interactive profile display widget',
       },
     ],
-  })
-);
+  };
+});
+
+// Handle resource reads
+server.setRequestHandler(ReadResourceRequestSchema, async (request: any) => {
+  const { uri } = request.params;
+
+  switch (uri) {
+    case 'profile://widget': {
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'text/html',
+            text: createProfileHTML(PROFILE_DATABASE.default),
+          },
+        ],
+      };
+    }
+    default:
+      throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+  }
+});
 
 // ==================== TOOLS ====================
 
-/**
- * Tool: Get Profile
- * Enhanced version with HTML widget output
- */
-server.registerTool(
-  'get-profile',
-  {
-    title: 'Get Employee Profile',
-    description: 'Fetch and display employee profile with beautiful HTML interface',
-    _meta: {
-      'openai/outputTemplate': 'ui://widget/profile.html',
-      'openai/toolInvocation/invoking': 'Loading employee profile...',
-      'openai/toolInvocation/invoked': 'Profile loaded successfully'
-    },
-    inputSchema: {
-      profileId: z.string().optional().describe('Profile ID to fetch (default, admin, or employee ID)')
-    }
-  },
-  async (args: any) => {
-    const profileId = args?.profileId || process.env.DEFAULT_PROFILE_ID || 'default';
-    
-    // Simulate AWS API call (replace with real AWS integration)
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const profile = PROFILE_DATABASE[profileId] || PROFILE_DATABASE.default;
-    const profileHTML = createProfileHTML(profile);
-    
-    return {
-      content: [
-        { 
-          type: 'text', 
-          text: `✅ Profile loaded for ${profile.name} (${profile.id}) from ${profile.department} department`
-        }
-      ],
-      structuredContent: { userData: profile },
-      _meta: {
-        'openai/dynamicContent': {
-          uri: 'ui://widget/profile.html',
-          mimeType: 'text/html+skybridge',
-          text: profileHTML
-        }
-      }
-    };
-  }
-);
+// List available tools
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  return {
+    tools: [
+      {
+        name: 'get_profile',
+        description: 'Fetch and display employee profile with beautiful HTML interface',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            profileId: {
+              type: 'string',
+              description: 'Profile ID to fetch (default, admin, or employee ID)',
+            },
+          },
+        },
+      },
+      {
+        name: 'calculate_stats',
+        description: 'Calculate various statistics from profile data',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            calculation: {
+              type: 'string',
+              enum: ['average_completion', 'total_projects', 'completion_rate', 'time_at_company'],
+              description: 'Type of calculation to perform',
+            },
+            profileId: {
+              type: 'string',
+              description: 'Profile ID to calculate for',
+            },
+          },
+          required: ['calculation'],
+        },
+      },
+    ],
+  };
+});
 
-/**
- * Tool: Calculate Project Statistics
- * Enhanced calculator with profile context
- */
-server.registerTool(
-  'calculate-stats',
-  {
-    title: 'Calculate Profile Statistics',
-    description: 'Calculate various statistics from profile data',
-    inputSchema: {
-      calculation: z.enum(['average_completion', 'total_projects', 'completion_rate', 'time_at_company']).describe('Type of calculation to perform'),
-      profileId: z.string().optional().describe('Profile ID to calculate for')
-    }
-  },
-  async (args: any) => {
-    const profileId = args?.profileId || 'default';
-    const profile = PROFILE_DATABASE[profileId] || PROFILE_DATABASE.default;
-    
-    let result: number;
-    let description: string;
-    
-    switch (args.calculation) {
-      case 'average_completion':
-        result = Math.round(profile.projects.reduce((sum, p) => sum + p.completion, 0) / profile.projects.length);
-        description = `Average project completion rate for ${profile.name}`;
-        break;
-      case 'total_projects':
-        result = profile.projects.length;
-        description = `Total number of projects for ${profile.name}`;
-        break;
-      case 'completion_rate':
-        const completed = profile.projects.filter(p => p.status === 'Completed').length;
-        result = Math.round((completed / profile.projects.length) * 100);
-        description = `Percentage of completed projects for ${profile.name}`;
-        break;
-      case 'time_at_company':
-        const joinDate = new Date(profile.joinDate);
-        const now = new Date();
-        result = Math.floor((now.getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
-        description = `Years at company for ${profile.name}`;
-        break;
-      default:
-        throw new Error('Invalid calculation type');
-    }
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `${description}: ${result}${args.calculation === 'completion_rate' || args.calculation === 'average_completion' ? '%' : args.calculation === 'time_at_company' ? ' years' : ''}`
+// Handle tool calls
+server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
+  const { name, arguments: args } = request.params;
+
+  try {
+    switch (name) {
+      case 'get_profile': {
+        const profileId = args?.profileId || process.env.DEFAULT_PROFILE_ID || 'default';
+        
+        // Simulate AWS API call (replace with real AWS integration)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const profile = PROFILE_DATABASE[profileId] || PROFILE_DATABASE.default;
+        const profileHTML = createProfileHTML(profile);
+        
+        return {
+          content: [
+            { 
+              type: 'text', 
+              text: `✅ Profile loaded for ${profile.name} (${profile.id}) from ${profile.department} department\n\n${profileHTML}`
+            }
+          ],
+        };
+      }
+
+      case 'calculate_stats': {
+        const profileId = args?.profileId || 'default';
+        const profile = PROFILE_DATABASE[profileId] || PROFILE_DATABASE.default;
+        
+        let result: number;
+        let description: string;
+        
+        switch (args.calculation) {
+          case 'average_completion':
+            result = Math.round(profile.projects.reduce((sum, p) => sum + p.completion, 0) / profile.projects.length);
+            description = `Average project completion rate for ${profile.name}`;
+            break;
+          case 'total_projects':
+            result = profile.projects.length;
+            description = `Total number of projects for ${profile.name}`;
+            break;
+          case 'completion_rate':
+            const completed = profile.projects.filter(p => p.status === 'Completed').length;
+            result = Math.round((completed / profile.projects.length) * 100);
+            description = `Percentage of completed projects for ${profile.name}`;
+            break;
+          case 'time_at_company':
+            const joinDate = new Date(profile.joinDate);
+            const now = new Date();
+            result = Math.floor((now.getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+            description = `Years at company for ${profile.name}`;
+            break;
+          default:
+            throw new McpError(ErrorCode.InvalidParams, 'Invalid calculation type');
         }
-      ]
-    };
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `${description}: ${result}${args.calculation === 'completion_rate' || args.calculation === 'average_completion' ? '%' : args.calculation === 'time_at_company' ? ' years' : ''}`
+            }
+          ]
+        };
+      }
+
+      default:
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    }
+  } catch (error) {
+    if (error instanceof McpError) {
+      throw error;
+    }
+    throw new McpError(ErrorCode.InternalError, `Tool execution failed: ${String(error)}`);
   }
-);
+});
 
 // ==================== HTTP ENDPOINTS ====================
 
 /**
  * Health Check
  */
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
@@ -599,67 +647,33 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
-/**
- * OAuth Protected Resource Metadata
- */
-app.get('/.well-known/oauth-protected-resource', (req, res) => {
-  const issuerURL = process.env.AUTH0_ISSUER_BASE_URL || 'https://dev-auth.us.auth0.com/';
-  const audience = process.env.AUTH0_AUDIENCE || 'https://profile-mcp-server.com/api';
-  
-  console.log('📋 OAuth metadata endpoint called');
-  
-  res.json({
-    resource: audience,
-    authorization_servers: [issuerURL],
-    scopes_supported: ['openid', 'profile', 'email'],
-    bearer_methods_supported: ['header']
-  });
-});
+// ==================== ERROR HANDLING ====================
 
-/**
- * Token Middleware
- */
-async function verifyToken(req: Request, res: Response, next: any) {
-  const authHeader = req.headers.authorization;
-  
-  if (authHeader) {
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-    currentAccessToken = token;
-    (req as any).accessToken = token;
-  } else {
-    currentAccessToken = null;
-  }
-  
-  return next();
-}
+server.onerror = (error: any) => {
+  console.error('[MCP Error]', error);
+};
 
-/**
- * MCP Protocol Endpoint
- */
-app.all('/mcp', express.json(), verifyToken, async (req: Request, res: Response) => {
-  try {
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    console.error('MCP request error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
+process.on('SIGINT', async () => {
+  await server.close();
+  process.exit(0);
 });
 
 // ==================== SERVER STARTUP ====================
 
 async function startServer() {
   try {
-    await server.connect(transport);
-    console.log('✅ Enhanced Profile MCP server connected');
-    
+    // Start HTTP server for health checks
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Profile MCP Server running on port ${PORT}`);
+      console.log(`🚀 HTTP Health server running on port ${PORT}`);
       console.log(`👥 Available profiles: ${Object.keys(PROFILE_DATABASE).join(', ')}`);
       console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`💼 Ready for ChatGPT Apps integration`);
     });
+    
+    // Start MCP server with STDIO transport
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error('✅ Enhanced Profile MCP server started successfully');
+    console.error('💼 Ready for ChatGPT integration with beautiful HTML profiles');
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

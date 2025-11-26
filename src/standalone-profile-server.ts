@@ -7,8 +7,23 @@
  */
 
 // Load environment variables (ES module compatible)
-import * as dotenv from 'dotenv';
+import dotenv from 'dotenv';
 dotenv.config();
+
+// Type assertion for process.env
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      MCP_SERVER_NAME?: string;
+      MCP_SERVER_VERSION?: string;
+      DEFAULT_PROFILE_ID?: string;
+      LOG_LEVEL?: string;
+      NODE_ENV?: string;
+      RENDER?: string;
+      RENDER_EXTERNAL_URL?: string;
+    }
+  }
+}
 
 interface MCPRequest {
   jsonrpc: string;

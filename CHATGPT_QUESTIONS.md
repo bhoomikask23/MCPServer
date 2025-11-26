@@ -7,7 +7,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ### Your Repository Contains 3 Server Types:
 
 1. **Basic Server** (`index.ts`) - Simple tools (echo, time, calculator)
-2. **Standalone Profile Server** (`standalone-profile-server.ts`) - Profile + basic tools  
+2. **Standalone Profile Server** (`standalone-profile-server.ts`) - Profile + basic tools
 3. **Enhanced Profile Server** (`enhanced-profile-server.ts`) - Full HTTP + OAuth + HTML widgets
 
 ---
@@ -17,6 +17,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ### 🟢 **Basic Server Questions** (All Servers)
 
 #### Calculator Questions
+
 ```
 "Calculate my salary increase: (75000 * 1.15) - 75000"
 "What's the compound interest: 1000 * (1.05)^10"
@@ -24,7 +25,8 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 "Project cost per hour: 25000 / 160"
 ```
 
-#### Time & Date Questions  
+#### Time & Date Questions
+
 ```
 "What's the current timestamp?"
 "Show me today's date and time"
@@ -32,6 +34,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 #### Echo & Testing
+
 ```
 "Echo back: Testing MCP integration"
 "Repeat this message: Hello from ChatGPT!"
@@ -43,14 +46,16 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ### 🟡 **Profile Server Questions** (Standalone + Enhanced)
 
 #### Basic Profile Queries
+
 ```
 "Show me my employee profile"
 "Get profile details for user admin"
-"Display the default user information" 
+"Display the default user information"
 "What's my employee ID and department?"
 ```
 
 #### Profile Data Analysis
+
 ```
 "What projects am I currently working on?"
 "How many skills do I have listed?"
@@ -60,6 +65,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 #### Skills & Expertise
+
 ```
 "List all my technical skills"
 "What programming languages do I know?"
@@ -68,6 +74,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 #### Career Information
+
 ```
 "When did I join the company?"
 "How long have I been with the company?"
@@ -80,6 +87,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ### 🔵 **Enhanced Server Questions** (HTTP + Widgets)
 
 #### Beautiful HTML Displays
+
 ```
 "Create a visual profile card for me"
 "Generate a professional HTML profile"
@@ -88,6 +96,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 #### Advanced Calculations
+
 ```
 "Calculate my average project completion rate"
 "What percentage of my projects are completed?"
@@ -96,6 +105,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 #### Multi-User Queries
+
 ```
 "Compare my skills with the admin user"
 "Show profiles for all available users"
@@ -108,6 +118,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ## 🎨 **Realistic Work Scenarios**
 
 ### 📊 **Project Management**
+
 ```
 "What's the status of my MCP Server Implementation project?"
 "Calculate if I finish 20% more of my current project, what will be the completion rate?"
@@ -116,6 +127,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 ### 💼 **Performance Review Prep**
+
 ```
 "Generate a professional summary of my profile"
 "What's my project completion track record?"
@@ -124,6 +136,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 ### 🧮 **Quick Work Calculations**
+
 ```
 "If I work 8 hours on a project at 75% completion, and it takes 40 total hours, what percentage will I complete today?"
 "Calculate team productivity: (85 + 60 + 100 + 70) / 4"
@@ -131,6 +144,7 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ```
 
 ### 👥 **Team Collaboration**
+
 ```
 "Show me information about our DevOps engineer"
 "Compare my skills with other team members"
@@ -145,16 +159,18 @@ Based on your MCP server repository, here's a comprehensive guide to the types o
 ### Complex Workflow Examples:
 
 #### **Profile + Calculation Combo**
+
 ```
 User: "Show my profile and calculate my average project completion"
 
 ChatGPT Response:
 1. ✅ Displays beautiful HTML profile widget
-2. 🧮 Calculates: (85 + 100 + 60 + 25) / 4 = 67.5%  
+2. 🧮 Calculates: (85 + 100 + 60 + 25) / 4 = 67.5%
 3. 📊 Shows: "Your average project completion is 67.5%"
 ```
 
 #### **Skills Analysis**
+
 ```
 User: "List my skills and tell me how many I have"
 
@@ -165,6 +181,7 @@ ChatGPT Response:
 ```
 
 #### **Project Planning**
+
 ```
 User: "Show my current projects and calculate how much work is left"
 
@@ -179,14 +196,16 @@ ChatGPT Response:
 ## 🔧 **Developer & Testing Questions**
 
 ### Server Status & Health
+
 ```
 "Check if the MCP server is working"
 "Show me available tools and resources"
-"Get server capabilities and information"  
+"Get server capabilities and information"
 "Test all available server functions"
 ```
 
 ### Data Validation
+
 ```
 "Verify my profile data is correct"
 "Show me the raw JSON profile data"
@@ -201,19 +220,20 @@ ChatGPT Response:
 ### What ChatGPT Can Do With Your Server:
 
 1. **📱 Rich HTML Widgets** - Beautiful, interactive profile cards
-2. **🔄 Real-time Data** - Live profile information and calculations  
+2. **🔄 Real-time Data** - Live profile information and calculations
 3. **🎯 Context Aware** - Remembers your profile across conversations
 4. **🧮 Smart Calculations** - Combines profile data with math operations
 5. **📊 Visual Analytics** - Progress bars, stats, and professional layouts
 
 ### Sample Conversation Flow:
+
 ```
 You: "I need to prepare for my performance review"
 
-ChatGPT: 
+ChatGPT:
 - 🔍 Fetches your profile
 - 📊 Generates beautiful HTML widget
-- 🧮 Calculates completion statistics  
+- 🧮 Calculates completion statistics
 - 💡 Provides insights and suggestions
 - 📋 Creates professional summary
 ```
