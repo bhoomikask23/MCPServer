@@ -3,14 +3,47 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import { randomUUID } from 'crypto';
 import { AVAILABLE_MEDICINES } from './data.js';
 import { MedicineData } from './types.js';
-import { setUserToken, requireUserToken } from './getUserToken.js';
+import { 
+  setAccessToken, 
+  getAccessToken,
+  requireAccessToken, 
+  setLc3Jwt, 
+  requireLc3Jwt, 
+  setLc3Id,
+  requireLc3Id,
+  setBrand, 
+  requireBrand,
+  setEmailId,
+  requireEmailId,
+  setOfficialBrandName,
+  requireOfficialBrandName,
+  getOfficialBrandName,
+  extractPatientId,
+  setSavingsCardEnrolledYear,
+  getSavingsCardEnrolledYear,
+  requireSavingsCardEnrolledYear
+} from './userAuthenticationService.js';
 
 // ==================== EXPRESS APP SETUP ====================
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
+const capiGatewayUrl = 'https://consumer-api.iv.apps.lilly.com';
+const lc3GatewayUrl = 'https://lillytogether-gateway.iv.connectedcarecloud.com';
+const dhispGatewayUrl = 'https://qa.ext-llydhisp.net/digh-lillytogether-test-xapi-v2';
+
+// LC3 Gateway Headers
+const LC3_IDENTITY_PROVIDER = 'okta';
+const LC3_DEVICE_OS_VERSION = '18.7.1';
+const LC3_DEVICE = 'iPhone14,7';
+const LC3_DEVICE_MANUFACTURER = 'Apple Inc';
+const LC3_APP_NAME = 'lillyplus';
+const LC3_APP_VERSION = '19.0.0';
+const LC3_DEVICE_OS = 'ios';
+const INSTANCE_ID = randomUUID(); // Generated once on server startup, persists for lifetime of deployment
 
 // Configure CORS to allow requests from ChatGPT
 app.use(cors({
@@ -19,6 +52,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-mcp-session-id'],
   credentials: true
 }));
+
+// Serve static files from the public directory
+app.use('/public', express.static('public'));
 
 // ==================== MCP SERVER SETUP ====================
 
@@ -31,9 +67,36 @@ const transport = new StreamableHTTPServerTransport({
   sessionIdGenerator: undefined,
 });
 
-// Global token storage (simple in-memory store for single-instance deployment)
-const tokenStore = new Map<string, string>();
-let currentAccessToken: string | null = null;
+// ==================== UTILITY FUNCTIONS ====================
+
+/**
+ * Calculates the savings card expiration year based on user enrollment.
+ * 
+ * Logic:
+ * - If user has savingsCardEnrolledYear in app settings: enrollmentYear + 1
+ * - Otherwise: currentYear + 1 (fallback for users without enrollment data)
+ * 
+ * This replaces the hardcoded `new Date().getFullYear() + 1` approach
+ * with dynamic calculation based on when the user actually enrolled.
+ * 
+ * @returns Expiration year (enrollment year + 1, or current year + 1 as fallback)
+ */
+function calculateExpirationYear(): number {
+  try {
+    const enrollmentYear = getSavingsCardEnrolledYear();
+    if (enrollmentYear) {
+      console.log(`Using enrollment-based expiration: ${enrollmentYear} + 1 = ${enrollmentYear + 1}`);
+      return enrollmentYear + 1;
+    }
+  } catch (error) {
+    console.log('No enrollment year available, using current year fallback');
+  }
+  
+  // Fallback to current year + 1 for users without enrollment data
+  const fallbackYear = new Date().getFullYear() + 1;
+  console.log(`Using fallback expiration year: ${fallbackYear}`);
+  return fallbackYear;
+}
 
 // ==================== HTML GENERATION ====================
 
@@ -342,28 +405,101 @@ server.registerResource(
       {
         uri: 'ui://widget/user-profile-dynamic.html',
         mimeType: 'text/html+skybridge',
-        text: `<!doctype html>
-<html>
+        text: `<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>User Profile</title>
   <style>
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;padding:20px}
-    .card{background:#fff;padding:28px;border-radius:12px;max-width:420px;margin:0 auto;text-align:center;box-shadow:0 6px 24px rgba(2,6,23,0.08)}
-    .icon{width:72px;height:72px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;font-size:28px;margin-bottom:16px}
-    .message{font-size:22px;font-weight:600;margin-bottom:6px}
-    .timestamp{color:#718096;margin-bottom:12px;font-family:monospace}
-    .badge{display:inline-flex;padding:6px 12px;border-radius:16px;background:#e6f7ff;color:#0066cc;font-weight:600}
+    :root{
+      --bg:#f5f7fb;
+      --card:#ffffff;
+      --brand:#e81f26;
+      --text:#1f2937;
+      --muted:#6b7280;
+      --shadow:0 8px 24px rgba(0,0,0,.08);
+      --radius:20px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background:var(--bg);
+      color:var(--text);
+      display:grid;
+      place-items:center;
+      min-height:100svh;
+      padding:24px;
+    }
+
+    .wrap{max-width:820px;width:100%;display:flex;flex-direction:column;gap:18px}
+
+    .card{
+      position:relative;
+      background:var(--card);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:28px;
+      overflow:hidden;
+    }
+
+    .card-header{
+      text-align:center;
+      margin-bottom:32px;
+    }
+
+    .logo-lilly{
+      width:120px;
+      height:auto;
+      margin:0 auto 16px;
+      display:block;
+    }
+
+    .profile-subtitle{
+      font-size:14px;
+      color:var(--muted);
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns:1fr auto;
+      row-gap:26px;
+      column-gap:24px;
+      align-items:center;
+      font-size:18px;
+    }
+
+    .label{
+      color:#111827;
+      font-weight:600;
+      letter-spacing:.02em;
+    }
+
+    .value{
+      font-weight:500;
+      text-align:right;
+    }
+
+    .value.empty{
+      color:var(--muted);
+      font-style:italic;
+      font-weight:400;
+    }
+
+    @media (max-width:640px){
+      .grid{font-size:16px;}
+    }
+
+    #skeleton { text-align: center; padding: 40px; color: var(--muted); }
   </style>
 </head>
 <body>
-  <!-- optional skeleton; keep dimensions stable -->
-  <div id="skeleton" aria-busy="true" style="max-width:420px;margin:0 auto">
-    <div class="card">Loading static data…</div>
+  <div id="skeleton" aria-busy="true">
+    Loading user profile…
   </div>
 
-  <!-- real UI stays hidden until data is ready -->
   <div id="root" hidden></div>
 
   <script>
@@ -372,34 +508,71 @@ server.registerResource(
 
     function renderIfReady() {
       const out = window.openai?.toolOutput || {};
-      const data = out.userData || null;      // <-- your tool shape
+      const profile = out.profile || null;
 
-      if (!data) return; // not ready yet; keep skeleton
+      if (!profile) return;
 
-      const message = data.message ?? 'No message';
-      const timestamp = data.timestamp ?? '';
-      const formattedTime = timestamp ? new Date(timestamp).toLocaleString() : '';
+      const givenName = profile.givenName || '';
+      const familyName = profile.familyName || '';
+      
+      const email = profile.email || '';
+      const phoneNumber = profile.phoneNumber || '';
+      const dob = profile.dob || '';
+      const gender = profile.gender || '';
+      
+      // Format address from primaryResidence object
+      const residence = profile.primaryResidence;
+      let address = '';
+      if (residence && typeof residence === 'object') {
+        const parts = [
+          residence.address1,
+          residence.address2,
+          residence.city,
+          residence.state,
+          residence.zipCode
+        ].filter(Boolean);
+        address = parts.join(', ');
+      }
 
       root.innerHTML = \`
-        <div class="card">
-          <div class="icon">📡</div>
-          <div class="message">\${message}</div>
-          <div class="timestamp">\${formattedTime}</div>
-          <div class="badge">✓ Static Data</div>
-        </div>\`;
+  <main class="wrap" role="main" aria-label="User Profile">
+    <section class="card" aria-label="Profile Information">
+      <div class="card-header">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/1/1e/Lilly-Logo.svg" alt="Lilly logo" class="logo-lilly" />
+        <div class="profile-subtitle">Profile Information</div>
+      </div>
 
-      // swap skeleton -> real content with no flicker
+      <div class="grid" role="list">
+        <div class="label" role="listitem">First Name</div>
+        <div class="value \${givenName ? '' : 'empty'}" aria-label="First Name value">\${givenName || 'Not provided'}</div>
+
+        <div class="label" role="listitem">Last Name</div>
+        <div class="value \${familyName ? '' : 'empty'}" aria-label="Last Name value">\${familyName || 'Not provided'}</div>
+
+        <div class="label" role="listitem">Email</div>
+        <div class="value \${email ? '' : 'empty'}" aria-label="Email value">\${email || 'Not provided'}</div>
+
+        <div class="label" role="listitem">Phone</div>
+        <div class="value \${phoneNumber ? '' : 'empty'}" aria-label="Phone value">\${phoneNumber || 'Not provided'}</div>
+
+        <div class="label" role="listitem">Date of Birth</div>
+        <div class="value \${dob ? '' : 'empty'}" aria-label="DOB value">\${dob || 'Not provided'}</div>
+
+        <div class="label" role="listitem">Gender</div>
+        <div class="value \${gender ? '' : 'empty'}" aria-label="Gender value">\${gender ? gender.charAt(0).toUpperCase() + gender.slice(1) : 'Not provided'}</div>
+
+        <div class="label" role="listitem">Address</div>
+        <div class="value \${address ? '' : 'empty'}" aria-label="Address value" style="max-width:400px">\${address || 'Not provided'}</div>
+      </div>
+    </section>
+  </main>\`;
+
       skeleton.hidden = true;
       root.hidden = false;
     }
 
-    // 1) Try immediately (covers the case where toolOutput is already present)
     renderIfReady();
-
-    // 2) Re-try when the host provides globals
     window.addEventListener('openai:set_globals', renderIfReady);
-
-    // 3) Optional: also re-try after tool executions initiated from inside the widget
     window.addEventListener('openai:tool_response', renderIfReady);
   </script>
 </body>
@@ -407,6 +580,200 @@ server.registerResource(
       },
     ],
   })
+);
+
+server.registerResource(
+  'savings-card-dynamic',
+  'ui://widget/savings-card-dynamic.html',
+  {},
+  async () => {
+    // Calculate expiration year based on user enrollment or fallback to current year + 1
+    const expirationYear = calculateExpirationYear();
+    
+    return {
+      contents: [
+        {
+          uri: 'ui://widget/savings-card-dynamic.html',
+          mimeType: 'text/html+skybridge',
+          text: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lilly Savings Card</title>
+  <style>
+    :root{
+      --bg:#f5f7fb;
+      --card:#ffffff;
+      --brand:#e81f26; /* Lilly red (approx) */
+      --text:#1f2937;
+      --muted:#6b7280;
+      --accent:#0b5cab; /* blue accent for "EXPIRES" */
+      --shadow:0 8px 24px rgba(0,0,0,.08);
+      --radius:20px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background:var(--bg);
+      color:var(--text);
+      display:grid;
+      place-items:center;
+      min-height:100svh;
+      padding:24px;
+    }
+
+    .wrap{max-width:820px;width:100%;display:flex;flex-direction:column;gap:18px}
+
+    /* Top card */
+    .card{
+      position:relative;
+      background:var(--card);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:28px 28px 32px 28px;
+      overflow:hidden;
+    }
+    .card::after{ /* angled light band */
+      content:"";
+      position:absolute;inset:-30% -40% auto auto;
+      width:70%;height:170%;
+      background:linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.06));
+      transform:skewX(-18deg);
+      border-radius:40px;
+      pointer-events:none;
+    }
+
+    .card-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+
+    .logo-lilly{
+      width:76px;height:34px;object-fit:contain;flex:0 0 auto
+    }
+
+    .meta{ text-align:right }
+    .meta small{color:var(--muted);text-transform:uppercase;letter-spacing:.12em;font-weight:700}
+    .meta .number{font-size:28px;font-weight:700;margin-top:4px}
+
+    .content{display:grid;grid-template-columns:120px 1fr;gap:18px;align-items:start;margin-top:22px}
+
+    .logo-L{ /* big scripted L */
+      width:120px;height:120px;object-fit:contain
+    }
+
+    .terms{line-height:1.6;font-size:16px}
+
+    .expires{position:absolute;right:28px;top:96px;color:var(--accent);font-weight:800;letter-spacing:.08em}
+
+    .footnote{ text-align:center; color:var(--muted); font-size:15px; padding:2px 6px }
+
+    /* Bottom details panel */
+    .panel{
+      background:var(--card);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:26px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:1fr auto; /* label / value */
+      row-gap:26px;
+      column-gap:24px;
+      align-items:center;
+      font-size:22px;
+    }
+    .label{color:#111827;font-weight:600;letter-spacing:.02em}
+    .value{font-weight:600;}
+
+    @media (max-width:640px){
+      .content{grid-template-columns:1fr;}
+      .expires{position:static;margin-top:8px;text-align:right}
+      .meta .number{font-size:22px}
+      .grid{font-size:18px}
+    }
+
+    #skeleton { text-align: center; padding: 40px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="skeleton" aria-busy="true">
+    Loading savings card information…
+  </div>
+
+  <div id="root" hidden></div>
+
+  <script>
+    const root = document.getElementById('root');
+    const skeleton = document.getElementById('skeleton');
+
+    function renderIfReady() {
+      const out = window.openai?.toolOutput || {};
+      const copayCard = out.copayCard || null;
+
+      if (!copayCard) return;
+
+      const cardNumber = copayCard.copayCardNumber || 'N/A';
+      const rxBIN = copayCard.RxBIN || 'N/A';
+      const rxPCN = copayCard.RxPCN || 'N/A';
+      const rxGroup = copayCard.RxGroup || 'N/A';
+
+      root.innerHTML = \`
+  <main class="wrap" role="main" aria-label="Lilly Savings Card">
+    <!-- Savings Card -->
+    <section class="card" aria-label="Savings Card">
+      <div class="card-header">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/1/1e/Lilly-Logo.svg" alt="Lilly logo" class="logo-lilly" />
+        <div class="meta">
+          <small>Savings Card #</small>
+          <div class="number" aria-label="Card Number">\${cardNumber}</div>
+        </div>
+      </div>
+
+      <div class="content">
+        <img src="https://logosandtypes.com/wp-content/uploads/2025/04/Lilly-scaled.png" alt="Lilly L logo" class="logo-L" />
+        <p class="terms">
+          Offer good until <strong>12/31/${expirationYear}</strong> or for up to 24 months from patient qualification into the program, whichever comes first.
+        </p>
+      </div>
+
+      <div class="expires">EXPIRES</div>
+    </section>
+
+    <p class="footnote">*Governmental beneficiaries excluded, terms and conditions apply.</p>
+
+    <!-- Bottom info panel -->
+    <section class="panel" aria-label="Pharmacy Processing Info">
+      <div class="grid" role="list">
+        <div class="label" role="listitem">RXBIN</div>
+        <div class="value" aria-label="RXBIN value">\${rxBIN}</div>
+
+        <div class="label" role="listitem">PCN</div>
+        <div class="value" aria-label="PCN value">\${rxPCN}</div>
+
+        <div class="label" role="listitem">GRP</div>
+        <div class="value" aria-label="GRP value">\${rxGroup}</div>
+
+        <div class="label" role="listitem">ID#</div>
+        <div class="value" aria-label="ID Number">\${cardNumber}</div>
+      </div>
+    </section>
+  </main>\`;
+
+      skeleton.hidden = true;
+      root.hidden = false;
+    }
+
+    renderIfReady();
+    window.addEventListener('openai:set_globals', renderIfReady);
+    window.addEventListener('openai:tool_response', renderIfReady);
+  </script>
+</body>
+</html>`
+        },
+      ],
+    };
+  }
 );
 
 
@@ -469,13 +836,13 @@ server.registerTool(
     inputSchema: {}
   },
   async () => {
-    const userToken = requireUserToken();
+    const userToken = requireAccessToken();
     
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
       
-      const response = await fetch('https://f7bm2iixd1.execute-api.ap-southeast-2.amazonaws.com/prod/static', {
+      const response = await fetch(`${capiGatewayUrl}/v1/userAggregate`, {
         method: 'GET',
         headers: { 
           Authorization: `Bearer ${userToken}`,
@@ -493,13 +860,113 @@ server.registerTool(
       }
       
       const data = await response.json();
+      const profile = data.profile || {};
+      
+      const fullName = `${profile.givenName || ''} ${profile.familyName || ''}`.trim() || 'User';
       
       return {
-        content: [{ type: 'text', text: `Static data received: ${data.message} at ${data.timestamp}` }],
-        structuredContent: { userData: data }
+        content: [{ type: 'text', text: `Profile loaded for ${fullName}` }],
+        structuredContent: { profile: profile }
       };
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error.message);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timed out');
+      }
+      throw error;
+    }
+  }
+);
+
+/**
+ * Tool: Get Savings Card
+ * Fetches copay savings card information from the savings card API.
+ * Requires OAuth authentication - uses user's token from ChatGPT.
+ * Returns copay card details to render in the savings-card widget.
+ */
+server.registerTool(
+  'get-savings-card',
+  {
+    title: 'Get Savings Card',
+    description: 'Fetch copay savings card information for the authenticated user',
+    _meta: {
+      'openai/outputTemplate': 'ui://widget/savings-card-dynamic.html',
+      'openai/toolInvocation/invoking': 'Fetching savings card information...',
+      'openai/toolInvocation/invoked': 'Savings card loaded successfully'
+    },
+    inputSchema: {}
+  },
+  async () => {
+    const userToken = requireAccessToken();
+    
+    // Try to get dynamic values, fall back to constants if not available
+    let uid: string;
+    let email: string;
+    let officialBrandName: string;
+    
+    try {
+      uid = requireLc3Id();
+    } catch {
+      uid = 'f765e766-0379-4344-a703-9383c4818174';
+      console.log('LC3 ID not available, using default');
+    }
+    
+    try {
+      email = requireEmailId();
+    } catch {
+      email = 'taltz1817@grr.la';
+      console.log('Email ID not available, using default');
+    }
+    
+    try {
+      officialBrandName = requireOfficialBrandName();
+    } catch {
+      officialBrandName = 'Ixekizumab US';
+      console.log('Official brand name not available, using default');
+    }
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(`${dhispGatewayUrl}/api/savingscard`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csp-dhisp-source': LC3_APP_NAME,
+          'action': 'search',
+          'x-csp-dhisp-trackingid': randomUUID(),
+          'Authorization': `Bearer ${userToken}`
+        },
+        body: JSON.stringify({
+          brandProgram: officialBrandName,
+          uid: uid,
+          email: email,
+          '18YrsOfAge': true
+        }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Savings card API error:', response.status, errorText);
+        throw new Error(`Savings card API request failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const copayCard = data.copayCard || {};
+      
+      return {
+        content: [{ 
+          type: 'text', 
+          text: `Savings card loaded: ${copayCard.copayCardNumber || 'No card number'}` 
+        }],
+        structuredContent: { copayCard: copayCard }
+      };
+    } catch (error: any) {
+      console.error('Failed to fetch savings card:', error.message);
       if (error.name === 'AbortError') {
         throw new Error('Request timed out');
       }
@@ -596,9 +1063,9 @@ app.get('/health', (req: Request, res: Response) => {
  * Advertises this server's resource URL and supported authorization servers.
  * Must match Auth0 API Identifier exactly.
  */
-app.get('/.well-known/oauth-protected-resource', (req, res) => {
-  const issuerURL = process.env.AUTH0_ISSUER_BASE_URL;
-  const audience = process.env.AUTH0_AUDIENCE; // Use audience as resource URL
+app.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
+  const issuerURL = process.env.LILLY_ISSUER_BASE_URL;
+  const audience = process.env.LILLY_AUDIENCE; // Use audience as resource URL
   
   if (!issuerURL || !audience) {
     return res.status(503).json({
@@ -612,50 +1079,199 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
   res.json({
     resource: audience, // MUST match the API Identifier in Auth0 EXACTLY
     authorization_servers: [issuerURL],
-    scopes_supported: ['openid', 'profile', 'email'],
+    scopes_supported: ['openid', 'profile'],
     bearer_methods_supported: ['header']
   });
 });
 
 /**
- * Token Verification Middleware
+ * Token Storage Middleware
  * Extracts OAuth token from Authorization header and stores it for tool use.
  * Non-blocking - allows all requests through, tools enforce auth as needed.
  */
 async function verifyToken(req: Request, res: Response, next: any) {
   const authHeader = req.headers.authorization;
   
-  console.log('verifyToken middleware:', {
-    hasAuthHeader: !!authHeader,
-    authHeaderValue: authHeader ? authHeader.substring(0, 20) + '...' : 'none',
-    method: req.method,
-    path: req.path
-  });
-  
   if (!authHeader) {
-    console.log('ℹ️ No auth header - anonymous access allowed');
-    currentAccessToken = null;
-    setUserToken(null);
+    setAccessToken(null);
     return next();
   }
   
   const token = authHeader.replace(/^Bearer\s+/i, '');
   if (!token || token === authHeader) {
-    console.log('⚠️ Invalid auth header format - continuing without authentication');
-    currentAccessToken = null;
-    setUserToken(null);
+    setAccessToken(null);
     return next();
   }
   
-  // Store token directly without any verification or analysis
-  console.log('✅ Token received - storing for API calls');
+  // Check if access token value has changed
+  const currentToken = getAccessToken();
+  const tokenChanged = token !== currentToken;
   
-  (req as any).accessToken = token;
-  currentAccessToken = token;
-  setUserToken(token);
+ 
+  if (tokenChanged ) {
+    // Store the access token
+    setAccessToken(token);
+    // Fetches brand and LC3 JWT token and brand using the access token.
+    await fetchAndSetBrand(token);
+    // Whenever access token changes try to fetch LC3 JWT, this will replace the existing value
+    await fetchAndSetLc3JwtAndId(token);
+  }
   
   return next();
 }
+
+/**
+ * Fetches user app settings and extracts the brand.
+ * Sets the brand value if found in settings.
+ */
+async function fetchAndSetBrand(token: string): Promise<void> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${capiGatewayUrl}/v1/appSettings`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.error('Failed to fetch app settings:', response.status);
+      setBrand(null);
+      return;
+    }
+    
+    const data = await response.json();
+    const settings = data.settings || [];
+    
+    // Extract brand, emailId, and enrollment year from settings
+    if (settings.length > 0 && settings[0].key) {
+      const brandValue = settings[0].key;
+      console.log(`Brand set to: ${brandValue}`);
+      setBrand(brandValue);
+      
+      // Set official brand name using the mapping function
+      const officialName = getOfficialBrandName(brandValue);
+      console.log(`Official brand name set to: ${officialName}`);
+      setOfficialBrandName(officialName);
+      
+      // Extract originalEmailId and savingsCardEnrolledYear from the value field
+      if (settings[0].value) {
+        try {
+          const settingsValue = JSON.parse(settings[0].value);
+          const emailValue = settingsValue.originalEmailId || null;
+          console.log(`Email ID set to: ${emailValue}`);
+          setEmailId(emailValue);
+          
+          // Extract savings card enrollment year if available
+          const enrollmentYear = settingsValue.savingsCardEnrolledYear || null;
+          if (enrollmentYear && typeof enrollmentYear === 'number') {
+            console.log(`Savings card enrollment year set to: ${enrollmentYear}`);
+            setSavingsCardEnrolledYear(enrollmentYear);
+          } else {
+            console.log('No savings card enrollment year found in settings');
+            setSavingsCardEnrolledYear(null);
+          }
+        } catch (parseError) {
+          console.error('Failed to parse settings value:', parseError);
+          setEmailId(null);
+          setSavingsCardEnrolledYear(null);
+        }
+      } else {
+        setEmailId(null);
+        setSavingsCardEnrolledYear(null);
+      }
+    } else {
+      console.log('User not registered, no brand found');
+      setBrand(null);
+      setOfficialBrandName(null);
+      setEmailId(null);
+      setSavingsCardEnrolledYear(null);
+    }
+  } catch (error: any) {
+    console.error('Error fetching brand:', error.message);
+    setBrand(null);
+    setOfficialBrandName(null);
+    setEmailId(null);
+    setSavingsCardEnrolledYear(null);
+  }
+}
+
+/**
+ * Fetches LC3 JWT token and extracts the patient ID.
+ * Sets both lc3Jwt and lc3Id values.
+ */
+async function fetchAndSetLc3JwtAndId(token: string): Promise<void> {
+  try {
+    // Get the brand from stored variable (default to 'taltz' if not set)
+    const brandName = requireBrand();
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${lc3GatewayUrl}/v1/authorize`, {
+      method: 'POST',
+      headers: {
+        'identity-provider': LC3_IDENTITY_PROVIDER,
+        'cc-app-device-os-version': LC3_DEVICE_OS_VERSION,
+        'cc-app-device': LC3_DEVICE,
+        'cc-app-device-manufacturer': LC3_DEVICE_MANUFACTURER,
+        'x-csp-dhisp-trackingid': randomUUID(),
+        'brandname': brandName,
+        'x-csp-dhisp-source': LC3_APP_NAME,
+        'cc-app-instance-id': INSTANCE_ID,
+        'cc-app-name': LC3_APP_NAME,
+        'cc-app-version': LC3_APP_VERSION,
+        'cc-app-device-os': LC3_DEVICE_OS,
+        'Authorization': `Bearer ${token}`
+      },
+      body: '',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.error('Failed to fetch LC3 JWT:', response.status);
+      setLc3Jwt(null);
+      setLc3Id(null);
+      return;
+    }
+    
+    const data = await response.json();
+    
+    // Extract JWT from response
+    if (data.jwt) {
+      const lc3JwtToken = data.jwt;
+      console.log('LC3 JWT token received');
+      setLc3Jwt(lc3JwtToken);
+      
+      // Extract patient ID from the JWT
+      try {
+        const patientId = extractPatientId(lc3JwtToken);
+        console.log(`LC3 ID set to: ${patientId}`);
+        setLc3Id(patientId);
+      } catch (error: any) {
+        console.error('Error extracting patient ID from LC3 JWT:', error.message);
+        setLc3Id(null);
+      }
+    } else {
+      console.log('User not registered, no LC3 JWT found');
+      setLc3Jwt(null);
+      setLc3Id(null);
+    }
+  } catch (error: any) {
+    console.error('Error fetching LC3 JWT:', error.message);
+    setLc3Jwt(null);
+    setLc3Id(null);
+  }
+}
+
 
 /**
  * MCP Protocol Endpoint
