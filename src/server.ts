@@ -1064,8 +1064,8 @@ app.get('/health', (req: Request, res: Response) => {
  * Must match Auth0 API Identifier exactly.
  */
 app.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
-  const issuerURL = process.env.LILLY_ISSUER_BASE_URL;
-  const audience = process.env.LILLY_AUDIENCE; // Use audience as resource URL
+  const issuerURL = process.env.AUTH0_ISSUER_BASE_URL;
+  const audience = process.env.AUTH0_AUDIENCE; // Use audience as resource URL
   
   if (!issuerURL || !audience) {
     return res.status(503).json({
