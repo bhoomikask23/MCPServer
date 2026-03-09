@@ -27,7 +27,7 @@ const patients = [
   },
   {
     id: 'HC-2024-002',
-    name: 'James Rivera',
+    name: 'Jamesxws',
     age: 58,
     gender: 'Male',
     bloodType: 'A-',
