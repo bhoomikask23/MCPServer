@@ -41,10 +41,11 @@ interface ProfileData {
 
 // Environment variables: Required for OAuth, optional for others with defaults
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace NodeJS {
     interface ProcessEnv {
       PORT?: string; // Optional: defaults to 3000
-      NODE_ENV?: string; // Optional: defaults to 'development'  
+      NODE_ENV?: string; // Optional: defaults to 'development'
       DEFAULT_PROFILE_ID?: string; // Optional: defaults to 'default'
       AUTH0_ISSUER_BASE_URL: string; // Required for OAuth functionality
       AUTH0_AUDIENCE: string; // Required for OAuth functionality
@@ -599,17 +600,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             result = profile.projects.length;
             description = `Total number of projects for ${profile.name}`;
             break;
-          case 'completion_rate':
+          case 'completion_rate': {
             const completed = profile.projects.filter(p => p.status === 'Completed').length;
             result = Math.round((completed / profile.projects.length) * 100);
             description = `Percentage of completed projects for ${profile.name}`;
             break;
-          case 'time_at_company':
+          }
+          case 'time_at_company': {
             const joinDate = new Date(profile.joinDate);
             const now = new Date();
             result = Math.floor((now.getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
             description = `Years at company for ${profile.name}`;
             break;
+          }
           default:
             throw new McpError(ErrorCode.InvalidParams, 'Invalid calculation type');
         }

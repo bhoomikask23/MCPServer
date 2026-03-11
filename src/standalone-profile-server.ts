@@ -14,6 +14,7 @@ dotenv.config();
 
 // Type assertion for process.env
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace NodeJS {
     interface ProcessEnv {
       MCP_SERVER_NAME?: string;
